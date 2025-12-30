@@ -36,6 +36,8 @@
 
 ## Установка
 
+⚠️ **Важно**: После копирования файлов обязательно настройте автозагрузку классов (шаг 3), иначе интеграция не заработает!
+
 ### 1. Копирование файлов
 
 Скопируйте содержимое директории `local/` в `local/` вашего Bitrix проекта:
@@ -69,7 +71,65 @@ CLOUDPAYMENTS_TEST_MODE=true
 - Регистрация: https://cloudpayments.ru/
 - API ключи: Личный кабинет → Настройки → API
 
-### 3. Регистрация сервиса (опционально)
+### 3. Настройка автозагрузки классов
+
+**ВАЖНО!** Классы используют namespace `App\`, поэтому нужна PSR-4 автозагрузка.
+
+#### Вариант А: У вас уже есть PSR-4 автозагрузчик
+
+Если у вас уже настроена автозагрузка для `App\` → `local/src/App/`, то ничего делать не нужно - классы подхватятся автоматически.
+
+#### Вариант Б: Настроить автозагрузку вручную
+
+Создайте файл `local/php_interface/init.php` (или дополните существующий):
+
+```php
+<?php
+// Автозагрузчик для namespace App\
+spl_autoload_register(function ($class) {
+    // Проверяем что класс из namespace App\
+    if (strpos($class, 'App\\') !== 0) {
+        return;
+    }
+
+    // Формируем путь к файлу
+    $path = $_SERVER['DOCUMENT_ROOT'] . '/local/src/' . str_replace('\\', '/', $class) . '.php';
+
+    // Подключаем файл если он существует
+    if (file_exists($path)) {
+        require_once $path;
+    }
+});
+```
+
+#### Вариант В: Использовать Composer (рекомендуется)
+
+Если в проекте используется Composer, создайте `local/composer.json`:
+
+```json
+{
+    "autoload": {
+        "psr-4": {
+            "App\\": "src/App/"
+        }
+    }
+}
+```
+
+Затем выполните:
+
+```bash
+cd local/
+composer dump-autoload
+```
+
+И в `bitrix/php_interface/init.php` добавьте:
+
+```php
+require_once $_SERVER['DOCUMENT_ROOT'] . '/local/vendor/autoload.php';
+```
+
+### 4. Регистрация сервиса (опционально)
 
 Если у вас есть Application контейнер, зарегистрируйте сервис в `init.php`:
 
@@ -90,7 +150,7 @@ $app->set('cloudpayments', function() {
 $cloudPayments = new \App\Application\Services\CloudPaymentsService();
 ```
 
-### 4. Настройка Webhooks в CloudPayments
+### 5. Настройка Webhooks в CloudPayments
 
 1. Войдите в личный кабинет CloudPayments
 2. Перейдите в **Настройки** → **Уведомления**
@@ -103,6 +163,28 @@ $cloudPayments = new \App\Application\Services\CloudPaymentsService();
 | Fail | `https://yoursite.com/local/api/payments/fail.php` |
 
 4. Метод: **POST**, Формат: **CloudPayments**, Кодировка: **UTF-8**
+
+## Проверка установки
+
+Создайте тестовый файл `test_cloudpayments.php` в корне проекта:
+
+```php
+<?php
+require($_SERVER['DOCUMENT_ROOT'].'/bitrix/modules/main/include/prolog_before.php');
+
+use App\Application\Services\CloudPaymentsService;
+
+try {
+    $service = new CloudPaymentsService();
+    echo "✅ CloudPaymentsService подключен успешно!<br>";
+    echo "Public ID: " . $service->getPublicId() . "<br>";
+    echo "Test Mode: " . ($service->isTestMode() ? 'Да' : 'Нет') . "<br>";
+} catch (Exception $e) {
+    echo "❌ Ошибка: " . $e->getMessage();
+}
+```
+
+Откройте в браузере `http://yoursite.com/test_cloudpayments.php`. Если видите сообщение об успехе - всё настроено правильно!
 
 ## Использование
 
