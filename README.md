@@ -455,7 +455,6 @@ CLOUDPAYMENTS_TEST_MODE=true
 
 ## Поддержка
 
-- Email: dev@vooz.ru
 - Официальная документация CloudPayments: https://developers.cloudpayments.ru/
 
 ## Лицензия
@@ -464,4 +463,3 @@ MIT License
 
 ---
 
-**Разработано командой VOOZ**
