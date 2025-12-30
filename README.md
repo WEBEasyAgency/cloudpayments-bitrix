@@ -6,28 +6,32 @@
 
 ## Что включено
 
-### Сервисы и Entity
-- `CloudPaymentsService` - сервис для работы с CloudPayments API
-- `CloudPaymentEntity` - entity для данных платежей от CloudPayments
-- `SurveyWantHelpService` - сервис для обработки донатов
-- `SurveyWantHelpEntity` - entity для данных формы доната
+### Основные компоненты
+
+- **CloudPaymentsService** (`local/src/App/Application/Services/CloudPaymentsService.php`)
+  - Работа с CloudPayments API
+  - Подготовка данных для виджета
+  - Создание платежей (одноразовые и рекуррентные)
+  - Возвраты, получение информации о транзакциях
+  - Проверка HMAC подписи webhooks
+
+- **CloudPaymentEntity** (`local/src/App/Domain/Entities/CloudPaymentEntity.php`)
+  - Entity для данных платежа от CloudPayments
+  - Валидация данных webhook
+  - Проверка успешности платежа
 
 ### API Webhooks
+
 - `/local/api/payments/check.php` - проверка перед платежом
 - `/local/api/payments/pay.php` - обработка успешного платежа
 - `/local/api/payments/fail.php` - обработка неудачного платежа
 
-### Компонент Bitrix
-- `vooz:surveys.want_help_form` - форма приема донатов с интеграцией CloudPayments Widget
-
 ### Конфигурация
-- `local/config/cloudpayments.php` - конфигурация CloudPayments (ключи из .env)
-- `local/config/iblocks/survey_want_help.php` - конфигурация инфоблока для донатов
 
-### Handler
-- `local/handlers/survey_want_help_handler.php` - AJAX обработчик формы доната
+- `local/config/cloudpayments.php` - конфигурация CloudPayments (читает ключи из .env)
 
 ### Документация
+
 - `docs/CLOUDPAYMENTS_INTEGRATION.md` - полная документация по интеграции
 
 ## Установка
@@ -37,83 +41,56 @@
 Скопируйте содержимое директории `local/` в `local/` вашего Bitrix проекта:
 
 ```bash
-# Структура после копирования:
 local/
 ├── src/App/
 │   ├── Application/Services/
-│   │   ├── CloudPaymentsService.php
-│   │   └── SurveyWantHelpService.php
+│   │   └── CloudPaymentsService.php
 │   └── Domain/Entities/
-│       ├── CloudPaymentEntity.php
-│       └── SurveyWantHelpEntity.php
+│       └── CloudPaymentEntity.php
 ├── config/
-│   ├── cloudpayments.php
-│   └── iblocks/
-│       └── survey_want_help.php
-├── api/payments/
-│   ├── check.php
-│   ├── pay.php
-│   └── fail.php
-├── components/vooz/
-│   └── surveys.want_help_form/
-├── handlers/
-│   └── survey_want_help_handler.php
+│   └── cloudpayments.php
+└── api/payments/
+    ├── check.php
+    ├── pay.php
+    └── fail.php
 ```
 
 ### 2. Настройка .env
 
-Добавьте в файл `.env` в корне Bitrix проекта:
+Добавьте в `.env` в корне проекта:
 
 ```env
-# CloudPayments API Keys
 CLOUDPAYMENTS_PUBLIC_ID=pk_XXXXXXXXXXXXXXXXXXXXXXXX
 CLOUDPAYMENTS_API_SECRET=your_api_secret_here
 CLOUDPAYMENTS_TEST_MODE=true
-
-# Yandex SmartCaptcha (опционально, если у вас есть капча)
-SMARTCAPTCHA_SERVER_KEY=your_server_key
-SMARTCAPTCHA_CLIENT_KEY=your_client_key
 ```
 
-Ключи получить здесь:
+**Где получить ключи:**
 - Регистрация: https://cloudpayments.ru/
 - API ключи: Личный кабинет → Настройки → API
 
-### 3. Регистрация сервиса в init.php
+### 3. Регистрация сервиса (опционально)
 
-В файле `bitrix/php_interface/init.php` (или `local/php_interface/init.php`):
+Если у вас есть Application контейнер, зарегистрируйте сервис в `init.php`:
 
 ```php
 <?php
-// Если у вас есть автозагрузчик PSR-4 для namespace App\
-// то сервисы зарегистрируются автоматически
-
-// Пример регистрации в Application (если используется):
 use App\Core\Application;
 use App\Application\Services\CloudPaymentsService;
-use App\Application\Services\SurveyWantHelpService;
 
 $app = Application::getInstance();
-
 $app->set('cloudpayments', function() {
     return new CloudPaymentsService();
 });
-
-$app->set('survey_want_help', function() use ($app) {
-    return new SurveyWantHelpService($app->get('cloudpayments'));
-});
 ```
 
-### 4. Автосинхронизация IBlock
+Если нет - просто создавайте экземпляр напрямую:
 
-IBlock `survey_want_help` автоматически создастся при первом обращении к сайту (если у вас настроена автосинхронизация IBlock из конфигов).
+```php
+$cloudPayments = new \App\Application\Services\CloudPaymentsService();
+```
 
-Если автосинхронизации нет, создайте IBlock вручную:
-- Тип: `vooz_forms`
-- Код: `survey_want_help`
-- Свойства: см. в `local/config/iblocks/survey_want_help.php`
-
-### 5. Настройка Webhooks в CloudPayments
+### 4. Настройка Webhooks в CloudPayments
 
 1. Войдите в личный кабинет CloudPayments
 2. Перейдите в **Настройки** → **Уведомления**
@@ -125,87 +102,241 @@ IBlock `survey_want_help` автоматически создастся при �
 | Pay | `https://yoursite.com/local/api/payments/pay.php` |
 | Fail | `https://yoursite.com/local/api/payments/fail.php` |
 
-4. Метод: **POST**
-5. Формат: **CloudPayments**
-6. Кодировка: **UTF-8**
+4. Метод: **POST**, Формат: **CloudPayments**, Кодировка: **UTF-8**
 
 ## Использование
 
-### На странице Bitrix
+### Пример: Прием платежей через виджет
 
 ```php
 <?php
 require($_SERVER['DOCUMENT_ROOT'].'/bitrix/header.php');
 
-$APPLICATION->SetTitle('Помощь проекту');
+use App\Application\Services\CloudPaymentsService;
 
-// Вызов компонента
-$APPLICATION->IncludeComponent(
-    'vooz:surveys.want_help_form',
-    '',
-    [],
-    false
+$cloudPayments = new CloudPaymentsService();
+
+// Ваша бизнес-логика: создаем заказ в БД
+$orderId = 123; // ID заказа в вашей системе
+$amount = 1000.00; // Сумма
+$customerEmail = 'customer@example.com';
+$customerName = 'Иван Иванов';
+
+// Генерируем Invoice ID
+$invoiceId = $cloudPayments->generateInvoiceId($orderId);
+
+// Подготавливаем данные для виджета
+$widgetData = $cloudPayments->prepareWidgetData(
+    $amount,
+    'RUB',
+    $invoiceId,
+    'Оплата заказа #' . $orderId,
+    $customerEmail,
+    $customerName
 );
-
-require($_SERVER['DOCUMENT_ROOT'].'/bitrix/footer.php');
 ?>
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Оплата заказа</title>
+    <script src="https://widget.cloudpayments.ru/bundles/cloudpayments.js"></script>
+</head>
+<body>
+    <h1>Оплата заказа #<?= $orderId ?></h1>
+    <p>Сумма: <?= number_format($amount, 2) ?> ₽</p>
+
+    <button id="payButton">Оплатить</button>
+
+    <script>
+        const widget = new cp.CloudPayments();
+        const widgetData = <?= json_encode($widgetData) ?>;
+
+        document.getElementById('payButton').addEventListener('click', () => {
+            widget.pay('charge', widgetData, {
+                onSuccess: (options) => {
+                    alert('Платеж успешен! ID: ' + options.TransactionId);
+                    window.location.href = '/success.php?order_id=<?= $orderId ?>';
+                },
+                onFail: (reason) => {
+                    alert('Ошибка оплаты: ' + reason);
+                }
+            });
+        });
+    </script>
+</body>
+</html>
+
+<?php require($_SERVER['DOCUMENT_ROOT'].'/bitrix/footer.php'); ?>
 ```
 
-### Как это работает
+### Адаптация webhooks под ваш проект
 
-1. **Пользователь заполняет форму** (сумма, email, имя, комментарий)
-2. **AJAX запрос** на `/local/handlers/survey_want_help_handler.php`
-3. **Создается запись в IBlock** со статусом "pending"
-4. **Возвращаются данные для виджета** CloudPayments
-5. **Открывается виджет оплаты** CloudPayments
-6. **Пользователь вводит карту** и подтверждает платеж
-7. **CloudPayments отправляет webhook** на `/local/api/payments/check.php` (проверка)
-8. **CloudPayments отправляет webhook** на `/local/api/payments/pay.php` (успех) или `/local/api/payments/fail.php` (ошибка)
-9. **Обновляется статус** в IBlock на "success" или "rejected"
-10. **Отправляются email** администратору и донору
+Webhooks (`check.php`, `pay.php`, `fail.php`) содержат TODO комментарии. Адаптируйте их под свою логику:
 
-### Рекуррентные платежи (подписки)
-
-Для ежемесячных донатов при успешном платеже сохраняется `token` в поле `RECURRENT_TOKEN`.
-
-Пример автоматического списания:
+**Пример адаптации `pay.php`:**
 
 ```php
 <?php
-use App\Application\Services\CloudPaymentsService;
+// В файле local/api/payments/pay.php
 
-$service = app('cloudpayments');
+// После проверки подписи и парсинга данных:
+$payment = CloudPaymentEntity::fromWebhook($webhookData);
+$orderId = $service->parseDonationIdFromInvoiceId($payment->invoiceId);
 
-// Получаем записи с рекуррентными платежами
-$donations = \CIBlockElement::GetList(
-    [],
-    [
-        'IBLOCK_CODE' => 'survey_want_help',
-        'PROPERTY_PAYMENT_TYPE' => 'monthly',
-        '!PROPERTY_RECURRENT_TOKEN' => false,
+// ВАША ЛОГИКА:
+// Обновляем заказ в вашей таблице
+$el = new CIBlockElement();
+$el->Update($orderId, [
+    'PROPERTY_VALUES' => [
+        'STATUS' => 'paid',
+        'TRANSACTION_ID' => $payment->transactionId,
+        'PAID_AT' => date('d.m.Y H:i:s'),
     ]
+]);
+
+// Отправляем email клиенту
+CEvent::Send('ORDER_PAID', SITE_ID, [
+    'EMAIL' => $payment->email,
+    'ORDER_ID' => $orderId,
+    'AMOUNT' => $payment->amount,
+]);
+
+echo json_encode(['code' => 0]);
+```
+
+### Методы CloudPaymentsService
+
+#### prepareWidgetData()
+Подготовка данных для виджета
+
+```php
+$widgetData = $service->prepareWidgetData(
+    amount: 1000.00,
+    currency: 'RUB',
+    invoiceId: 'ORDER-123-1234567890',
+    description: 'Оплата заказа',
+    email: 'customer@example.com',
+    name: 'Иван Иванов',
+    recurrent: false // true для рекуррентных платежей
+);
+```
+
+#### generateInvoiceId()
+Генерация уникального Invoice ID
+
+```php
+$invoiceId = $service->generateInvoiceId($orderId);
+// Результат: "VOOZ-DONATION-123-1735632000"
+```
+
+#### parseDonationIdFromInvoiceId()
+Извлечение ID заказа из Invoice ID
+
+```php
+$orderId = $service->parseDonationIdFromInvoiceId($invoiceId);
+```
+
+#### verifyWebhookSignature()
+Проверка HMAC подписи webhook
+
+```php
+$requestBody = file_get_contents('php://input');
+$hmacHeader = $_SERVER['HTTP_X_CONTENT_HMAC'] ?? '';
+
+if (!$service->verifyWebhookSignature($requestBody, $hmacHeader)) {
+    http_response_code(401);
+    exit;
+}
+```
+
+#### createPayment()
+Создание платежа через API (серверная интеграция)
+
+```php
+$result = $service->createPayment(
+    1000.00,
+    'RUB',
+    'ORDER-123',
+    'Оплата заказа',
+    'customer@example.com'
+);
+```
+
+#### createRecurrentPayment()
+Создание рекуррентного платежа по токену
+
+```php
+$result = $service->createRecurrentPayment(
+    $token, // Token от предыдущего платежа
+    500.00,
+    'RUB',
+    'SUBSCRIPTION-456',
+    'Подписка',
+    'customer@example.com'
+);
+```
+
+#### refundPayment()
+Возврат средств
+
+```php
+// Полный возврат
+$result = $service->refundPayment($transactionId);
+
+// Частичный возврат
+$result = $service->refundPayment($transactionId, 500.00);
+```
+
+#### getTransaction()
+Получение информации о транзакции
+
+```php
+$result = $service->getTransaction($transactionId);
+```
+
+## Рекуррентные платежи (подписки)
+
+### 1. Первый платеж с сохранением токена
+
+```php
+$widgetData = $service->prepareWidgetData(
+    amount: 500.00,
+    currency: 'RUB',
+    invoiceId: $service->generateInvoiceId($subscriptionId),
+    description: 'Подписка',
+    email: 'customer@example.com',
+    recurrent: true  // Важно! Сохраняем токен
+);
+```
+
+### 2. Сохранение токена в webhook pay.php
+
+```php
+$payment = CloudPaymentEntity::fromWebhook($webhookData);
+
+if ($payment->token) {
+    // Сохраните токен в вашей БД для будущих списаний
+    saveRecurrentToken($subscriptionId, $payment->token);
+}
+```
+
+### 3. Последующие списания
+
+```php
+$token = getRecurrentToken($subscriptionId);
+
+$result = $service->createRecurrentPayment(
+    $token,
+    500.00,
+    'RUB',
+    $service->generateInvoiceId($subscriptionId),
+    'Ежемесячная подписка',
+    'customer@example.com'
 );
 
-while ($donation = $donations->Fetch()) {
-    $token = $donation['PROPERTY_RECURRENT_TOKEN_VALUE'];
-    $amount = $donation['PROPERTY_AMOUNT_VALUE'];
-    $email = $donation['PROPERTY_EMAIL_VALUE'];
-
-    $invoiceId = $service->generateInvoiceId($donation['ID']);
-
-    // Списываем средства
-    $result = $service->createRecurrentPayment(
-        $token,
-        $amount,
-        'RUB',
-        $invoiceId,
-        'Ежемесячная подписка',
-        $email
-    );
-
-    if ($result['Success']) {
-        echo "Списание успешно: " . $result['Model']['TransactionId'];
-    }
+if ($result['Success']) {
+    echo "Списание успешно!";
 }
 ```
 
@@ -226,68 +357,19 @@ CLOUDPAYMENTS_TEST_MODE=true
 | `5555 5555 5555 4444` | Mastercard - успешный платеж |
 | `4012 8888 8888 1881` | Visa - недостаточно средств |
 
-- CVV: любой (например `123`)
-- Срок: любая будущая дата (например `12/25`)
-
-## Структура данных
-
-### IBlock "survey_want_help"
-
-| Свойство | Тип | Описание |
-|----------|-----|----------|
-| AMOUNT | String | Сумма доната |
-| PAYMENT_TYPE | List | one_time / monthly |
-| DONOR_NAME | String | Имя донора |
-| EMAIL | String | Email донора |
-| COMMENT | HTML | Комментарий |
-| SUBMITTED_AT | String | Дата отправки формы |
-| CLOUDPAYMENT_STATUS | List | pending / success / rejected |
-| TRANSACTION_ID | String | ID транзакции CloudPayments |
-| RECURRENT_TOKEN | String | Token для рекуррентных платежей |
-
-## API методы CloudPaymentsService
-
-### prepareWidgetData()
-Подготовка данных для виджета оплаты
-
-### generateInvoiceId()
-Генерация уникального Invoice ID
-
-### parseDonationIdFromInvoiceId()
-Извлечение ID доната из Invoice ID
-
-### verifyWebhookSignature()
-Проверка подписи webhook (HMAC SHA256)
-
-### createPayment()
-Создание платежа через API (не через виджет)
-
-### createRecurrentPayment()
-Создание рекуррентного платежа по токену
-
-### refundPayment()
-Возврат средств
-
-### getTransaction()
-Получение информации о транзакции
+- **CVV**: любой (например `123`)
+- **Срок**: любая будущая дата (например `12/25`)
 
 ## Безопасность
 
-- ✅ Проверка HMAC подписи в webhooks
-- ✅ Валидация данных форм
-- ✅ Защита от SQL инъекций (через Bitrix API)
-- ✅ API Secret хранится в .env (не в git)
-- ✅ Yandex SmartCaptcha на форме (опционально)
-
-## Логи
-
-Ошибки и события логируются в:
-- `local/api/payments/error.log` - ошибки webhooks
-- PHP error log - общие ошибки приложения
+✅ Проверка HMAC подписи в webhooks (SHA256)
+✅ API Secret хранится в .env (не в git)
+✅ Валидация данных через CloudPaymentEntity
+✅ HTTPS для webhooks (обязательно в production)
 
 ## Полная документация
 
-См. `docs/CLOUDPAYMENTS_INTEGRATION.md` для детальной документации.
+См. `docs/CLOUDPAYMENTS_INTEGRATION.md` для детальной документации по API CloudPayments.
 
 ## Поддержка
 
